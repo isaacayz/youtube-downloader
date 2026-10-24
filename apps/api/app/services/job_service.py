@@ -95,6 +95,7 @@ class JobService:
         source_url = request.source.url or ""
         source_host = None
         source_url_redacted = None
+        source_url_private = None
         job_type = "remote_acquisition"
 
         if source_type == "synthetic":
@@ -104,13 +105,14 @@ class JobService:
             parsed = urlparse(source_url)
             source_host = parsed.netloc.lower()
             source_url_redacted = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+            source_url_private = source_url
 
             # Check YouTube policy switch
             if any(domain in source_host for domain in ["youtube.com", "youtu.be"]):
                 if not settings.ENABLE_YOUTUBE_DOWNLOAD:
                     raise HTTPException(
                         status_code=422,
-                        detail="YouTube source extraction is currently disabled by operator policy."
+                        detail="YouTube source extraction is currently disabled by operator policy. Set ENABLE_YOUTUBE_DOWNLOAD=true to enable."
                     )
         elif source_type == "upload":
             if not request.source.uploadId:
