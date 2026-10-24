@@ -57,8 +57,15 @@ export const api = {
       body: formData,
     });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Failed to upload media file');
+      let message = `Upload failed with HTTP ${res.status}`;
+      try {
+        const err = await res.json();
+        message = err.detail || err.title || message;
+      } catch {
+        const text = await res.text().catch(() => '');
+        if (text) message = text.slice(0, 150);
+      }
+      throw new Error(message);
     }
     return res.json();
   },
