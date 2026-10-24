@@ -22,7 +22,7 @@ export const api = {
 
   async createJob(payload: {
     source: { type: string; url?: string; uploadId?: string };
-    output: { mode: string; container: string; quality?: string };
+    output: { mode: string; container: string; quality?: string; subtitles?: boolean };
     rightsConfirmed: boolean;
   }): Promise<{ jobId: string; status: string; statusUrl: string }> {
     const idempotencyKey = crypto.randomUUID();
@@ -83,8 +83,13 @@ export const api = {
     return res.json();
   },
 
-  async listAssets(): Promise<Asset[]> {
-    const res = await fetch('/api/v1/assets');
+  async listAssets(params?: { search?: string; container?: string }): Promise<Asset[]> {
+    const query = new URLSearchParams();
+    if (params?.search) query.append('search', params.search);
+    if (params?.container) query.append('container', params.container);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+
+    const res = await fetch(`/api/v1/assets${qs}`);
     if (!res.ok) throw new Error('Failed to fetch assets');
     const data = await res.json();
     return data.items || [];
@@ -95,5 +100,19 @@ export const api = {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to delete asset');
+  },
+
+  async triggerMaintenanceCleanup(): Promise<any> {
+    const res = await fetch('/api/v1/maintenance/cleanup', {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to trigger maintenance cleanup');
+    return res.json();
+  },
+
+  async getMaintenanceStatus(): Promise<any> {
+    const res = await fetch('/api/v1/maintenance/status');
+    if (!res.ok) throw new Error('Failed to fetch maintenance status');
+    return res.json();
   },
 };

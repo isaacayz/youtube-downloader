@@ -21,11 +21,13 @@ import {
   Search,
   ExternalLink,
   ShieldCheck,
-  ShieldAlert
+  ShieldAlert,
+  Wrench,
+  SlidersHorizontal
 } from 'lucide-react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'enqueue' | 'library'>('enqueue');
+  const [activeTab, setActiveTab] = useState<'enqueue' | 'library' | 'operations'>('enqueue');
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -50,20 +52,35 @@ export default function App() {
   // Common output configuration
   const [outputMode, setOutputMode] = useState<string>('video');
   const [container, setContainer] = useState<string>('mp4');
+  const [subtitles, setSubtitles] = useState<boolean>(false);
   const [rightsConfirmed, setRightsConfirmed] = useState<boolean>(true);
+
+  // Library search & filter
+  const [librarySearch, setLibrarySearch] = useState<string>('');
+  const [libraryFilter, setLibraryFilter] = useState<string>('all');
+
+  // Maintenance & Operations state
+  const [cleaningUp, setCleaningUp] = useState<boolean>(false);
+  const [maintenanceStatus, setMaintenanceStatus] = useState<any>(null);
+  const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
 
   const fetchData = async () => {
     try {
-      const [info, status, jobsList, assetsList] = await Promise.all([
+      const [info, status, jobsList, assetsList, maint] = await Promise.all([
         api.getSystemInfo().catch(() => null),
         api.getSystemStatus().catch(() => null),
         api.listJobs().catch(() => []),
-        api.listAssets().catch(() => []),
+        api.listAssets({
+          search: librarySearch.trim() || undefined,
+          container: libraryFilter !== 'all' ? libraryFilter : undefined,
+        }).catch(() => []),
+        api.getMaintenanceStatus().catch(() => null),
       ]);
       if (info) setSystemInfo(info);
       if (status) setSystemStatus(status);
       setJobs(jobsList);
       setAssets(assetsList);
+      if (maint) setMaintenanceStatus(maint);
       setError(null);
     } catch (err: any) {
       setError(err.message || 'Error fetching system data');
@@ -76,7 +93,7 @@ export default function App() {
     fetchData();
     const interval = setInterval(fetchData, 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [librarySearch, libraryFilter]);
 
   const handleInspectUrl = async () => {
     if (!sourceUrl.trim()) return;
@@ -121,7 +138,7 @@ export default function App() {
       if (sourceMode === 'synthetic') {
         payload = {
           source: { type: 'synthetic', url: 'test://synthetic-job' },
-          output: { mode: outputMode, container },
+          output: { mode: outputMode, container, subtitles },
           rightsConfirmed: true,
         };
       } else if (sourceMode === 'upload') {
@@ -130,7 +147,7 @@ export default function App() {
         }
         payload = {
           source: { type: 'upload', uploadId: uploadedMeta.uploadId },
-          output: { mode: outputMode, container },
+          output: { mode: outputMode, container, subtitles },
           rightsConfirmed: true,
         };
       } else {
@@ -139,7 +156,7 @@ export default function App() {
         }
         payload = {
           source: { type: 'url', url: sourceUrl },
-          output: { mode: outputMode, container },
+          output: { mode: outputMode, container, subtitles },
           rightsConfirmed,
         };
       }
@@ -176,6 +193,21 @@ export default function App() {
       await fetchData();
     } catch (err: any) {
       setError(err.message || 'Failed to delete asset');
+    }
+  };
+
+  const handleTriggerCleanup = async () => {
+    setCleaningUp(true);
+    setCleanupMessage(null);
+    try {
+      const res = await api.triggerMaintenanceCleanup();
+      setMaintenanceStatus(res);
+      setCleanupMessage(`Maintenance completed: ${res.assetsRemoved} expired assets removed, ${res.stagingDirsCleaned} staging folders cleared.`);
+      await fetchData();
+    } catch (err: any) {
+      setError(err.message || 'Cleanup pass failed');
+    } finally {
+      setCleaningUp(false);
     }
   };
 
@@ -245,7 +277,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-lg font-bold tracking-tight text-white">Local Media Downloader</h1>
-              <p className="text-xs text-slate-400">Self-Hosted Acquisition & Conversion Pipeline</p>
+              <p className="text-xs text-slate-400">Production Baseline &bull; Phases 0 to 5 Complete</p>
             </div>
           </div>
 
@@ -276,6 +308,17 @@ export default function App() {
                   </span>
                 )}
               </button>
+              <button
+                onClick={() => setActiveTab('operations')}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 ${
+                  activeTab === 'operations'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Wrench className="w-3.5 h-3.5" />
+                Operations & Maintenance
+              </button>
             </nav>
 
             <div className="flex items-center gap-3">
@@ -303,6 +346,13 @@ export default function App() {
           <div className="p-4 rounded-lg bg-rose-950/50 border border-rose-800 text-rose-300 text-sm flex items-center justify-between">
             <span>{error}</span>
             <button onClick={() => setError(null)} className="text-rose-400 hover:text-white">&times;</button>
+          </div>
+        )}
+
+        {cleanupMessage && (
+          <div className="p-4 rounded-lg bg-emerald-950/50 border border-emerald-800 text-emerald-300 text-sm flex items-center justify-between">
+            <span>{cleanupMessage}</span>
+            <button onClick={() => setCleanupMessage(null)} className="text-emerald-400 hover:text-white">&times;</button>
           </div>
         )}
 
@@ -337,7 +387,7 @@ export default function App() {
               <Cpu className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-xs text-slate-400 font-medium">Workers</p>
+              <p className="text-xs text-slate-400 font-medium">Active Workers</p>
               <p className="text-sm font-semibold text-slate-200">
                 {systemStatus ? `${systemStatus.workerCount} online (${systemStatus.activeJobs} busy)` : '-'}
               </p>
@@ -349,7 +399,7 @@ export default function App() {
               <HardDrive className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-xs text-slate-400 font-medium">Free Storage</p>
+              <p className="text-xs text-slate-400 font-medium">Staging Free Space</p>
               <p className="text-sm font-semibold text-slate-200">
                 {systemStatus ? formatBytes(systemStatus.diskFreeBytes) : '-'}
               </p>
@@ -357,7 +407,7 @@ export default function App() {
           </div>
         </section>
 
-        {activeTab === 'enqueue' ? (
+        {activeTab === 'enqueue' && (
           <>
             {/* Job Enqueue Section */}
             <section className="bg-slate-900/40 border border-slate-800 rounded-xl p-6">
@@ -372,7 +422,7 @@ export default function App() {
                   }`}
                 >
                   <ExternalLink className="w-4 h-4" />
-                  Remote URL (Phase 3)
+                  Remote URL (YouTube & Direct Media)
                 </button>
                 <button
                   type="button"
@@ -384,7 +434,7 @@ export default function App() {
                   }`}
                 >
                   <Upload className="w-4 h-4" />
-                  Upload Local File (Phase 2)
+                  Upload Local File (FFmpeg Conversion)
                 </button>
                 <button
                   type="button"
@@ -396,7 +446,7 @@ export default function App() {
                   }`}
                 >
                   <Activity className="w-4 h-4" />
-                  Synthetic Test (Phase 1)
+                  Synthetic Test (Offline Pipeline)
                 </button>
               </div>
 
@@ -408,7 +458,7 @@ export default function App() {
                       <div className="flex gap-2">
                         <input
                           type="url"
-                          placeholder="https://source.example/media/sample.mp4 or YouTube URL"
+                          placeholder="https://www.youtube.com/watch?v=... or direct .mp4/.webm/.mp3 URL"
                           value={sourceUrl}
                           onChange={(e) => setSourceUrl(e.target.value)}
                           required
@@ -517,7 +567,7 @@ export default function App() {
                   </p>
                 )}
 
-                {/* Conversion Output Targets */}
+                {/* Conversion Output Targets & Options */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                   <div>
                     <label className="text-xs text-slate-300 font-medium">Target Mode</label>
@@ -557,21 +607,34 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-2">
-                  <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={rightsConfirmed}
-                      onChange={(e) => setRightsConfirmed(e.target.checked)}
-                      className="rounded border-slate-700 bg-slate-950 text-indigo-600 focus:ring-0"
-                    />
-                    Confirm rights and source authorization policy
-                  </label>
+                <div className="pt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1.5">
+                    {outputMode === 'video' && (
+                      <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={subtitles}
+                          onChange={(e) => setSubtitles(e.target.checked)}
+                          className="rounded border-slate-700 bg-slate-950 text-indigo-600 focus:ring-0"
+                        />
+                        Extract & embed subtitles (where available)
+                      </label>
+                    )}
+                    <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={rightsConfirmed}
+                        onChange={(e) => setRightsConfirmed(e.target.checked)}
+                        className="rounded border-slate-700 bg-slate-950 text-indigo-600 focus:ring-0"
+                      />
+                      Confirm rights and source authorization policy
+                    </label>
+                  </div>
 
                   <button
                     type="submit"
                     disabled={submitting || (sourceMode === 'upload' && !uploadedMeta)}
-                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium px-5 py-2 rounded-lg text-sm transition flex items-center gap-2"
+                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium px-5 py-2 rounded-lg text-sm transition flex items-center justify-center gap-2"
                   >
                     {submitting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
                     Dispatch Job
@@ -665,20 +728,50 @@ export default function App() {
               </div>
             </section>
           </>
-        ) : (
-          /* Media Library Section */
+        )}
+
+        {activeTab === 'library' && (
+          /* Media Library Section with Search & Filtering */
           <section className="bg-slate-900/40 border border-slate-800 rounded-xl overflow-hidden">
-            <div className="p-4 sm:px-6 border-b border-slate-800 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                <FileVideo className="w-4 h-4 text-indigo-400" />
-                Completed Media Library (Phase 2 & 3 Output)
-              </h2>
-              <span className="text-xs text-slate-400">{assets.length} stored files</span>
+            <div className="p-4 sm:px-6 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-base font-semibold text-white flex items-center gap-2">
+                  <FileVideo className="w-4 h-4 text-indigo-400" />
+                  Completed Media Library
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">{assets.length} stored files available for download</p>
+              </div>
+
+              {/* Search & Filter Bar */}
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Search by title..."
+                    value={librarySearch}
+                    onChange={(e) => setLibrarySearch(e.target.value)}
+                    className="bg-slate-950 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 w-48 sm:w-60"
+                  />
+                </div>
+
+                <select
+                  value={libraryFilter}
+                  onChange={(e) => setLibraryFilter(e.target.value)}
+                  className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="all">All Formats</option>
+                  <option value="mp4">MP4 Video</option>
+                  <option value="webm">WebM Video</option>
+                  <option value="mp3">MP3 Audio</option>
+                  <option value="m4a">M4A Audio</option>
+                </select>
+              </div>
             </div>
 
             {assets.length === 0 ? (
               <div className="py-16 text-center text-slate-500 text-sm">
-                No completed media files yet. Upload a local file or run an acquisition job to populate the library.
+                No matching media files found. Upload a file or dispatch a remote acquisition job.
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
@@ -728,11 +821,83 @@ export default function App() {
             )}
           </section>
         )}
+
+        {activeTab === 'operations' && (
+          /* Operations & Maintenance Section (Phases 4 & 5) */
+          <div className="space-y-6">
+            <section className="bg-slate-900/40 border border-slate-800 rounded-xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-base font-semibold text-white flex items-center gap-2">
+                    <Wrench className="w-4 h-4 text-indigo-400" />
+                    Automated Retention & Storage Cleanup
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Purges expired media assets, cleans stale scratch directories, and prunes event logs according to configured retention periods.
+                  </p>
+                </div>
+                <button
+                  onClick={handleTriggerCleanup}
+                  disabled={cleaningUp}
+                  className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium px-4 py-2 rounded-lg text-xs transition flex items-center gap-2"
+                >
+                  {cleaningUp ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <HardDrive className="w-3.5 h-3.5" />}
+                  Run Cleanup Now
+                </button>
+              </div>
+
+              {maintenanceStatus && (
+                <div className="bg-slate-950 border border-slate-800 rounded-lg p-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <span className="text-slate-500 block">Last Execution:</span>
+                    <span className="font-semibold text-slate-200">
+                      {maintenanceStatus.lastRun ? new Date(maintenanceStatus.lastRun).toLocaleString() : 'Never'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Expired Assets Removed:</span>
+                    <span className="font-semibold text-slate-200">{maintenanceStatus.assetsRemoved ?? 0} files</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Staging Dirs Cleared:</span>
+                    <span className="font-semibold text-slate-200">{maintenanceStatus.stagingDirsCleaned ?? 0} folders</span>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* Operational Runbook & Tooling Guide */}
+            <section className="bg-slate-900/40 border border-slate-800 rounded-xl p-6 space-y-4">
+              <h2 className="text-base font-semibold text-white flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4 text-indigo-400" />
+                Operational Runbook & Disaster Recovery (Phase 4)
+              </h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <div className="bg-slate-950 border border-slate-800 rounded-lg p-4 space-y-2">
+                  <h3 className="font-semibold text-indigo-300">Database Backup Script</h3>
+                  <p className="text-slate-400">Creates a compressed database dump and catalog manifest in <code>data/backups/</code>:</p>
+                  <pre className="bg-slate-900 p-2.5 rounded font-mono text-[11px] text-slate-300 overflow-x-auto">
+                    ./infra/scripts/backup.sh
+                  </pre>
+                </div>
+
+                <div className="bg-slate-950 border border-slate-800 rounded-lg p-4 space-y-2">
+                  <h3 className="font-semibold text-indigo-300">Database Restore Script</h3>
+                  <p className="text-slate-400">Safely restores PostgreSQL from an existing compressed dump:</p>
+                  <pre className="bg-slate-900 p-2.5 rounded font-mono text-[11px] text-slate-300 overflow-x-auto">
+                    ./infra/scripts/restore.sh data/backups/db_backup.sql.gz
+                  </pre>
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
       </main>
 
       {/* Footer */}
       <footer className="border-t border-slate-900 bg-slate-950 py-4 px-6 text-center text-xs text-slate-600">
-        Local Media Downloader &bull; Version {systemInfo?.version || '0.1.0'} &bull; Phases 0, 1, 2, 3 Implemented
+        Local Media Downloader &bull; Version {systemInfo?.version || '0.1.0'} &bull; Phases 0 to 5 Production Baseline
       </footer>
     </div>
   );

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 
 from app.core.config import settings
-from app.api.v1.routes import health, system, jobs, uploads, sources, assets
+from app.api.v1.routes import health, system, jobs, uploads, sources, assets, maintenance
 
 app = FastAPI(
     title="Local Media Downloader API",
@@ -31,6 +31,7 @@ app.include_router(jobs.router)
 app.include_router(uploads.router)
 app.include_router(sources.router)
 app.include_router(assets.router)
+app.include_router(maintenance.router)
 
 
 @app.exception_handler(HTTPException)

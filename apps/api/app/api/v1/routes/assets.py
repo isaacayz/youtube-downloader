@@ -1,7 +1,8 @@
 import os
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import select, desc
@@ -34,8 +35,21 @@ def map_asset_to_response(asset: Asset) -> AssetResponse:
 
 
 @router.get("", response_model=AssetListResponse)
-def list_assets(db: Session = Depends(get_db)):
-    query = select(Asset).filter(Asset.deleted_at.is_(None)).order_by(desc(Asset.created_at))
+def list_assets(
+    search: Optional[str] = Query(None, description="Search term for title or filename"),
+    container: Optional[str] = Query(None, description="Filter by media container"),
+    db: Session = Depends(get_db),
+):
+    query = select(Asset).filter(Asset.deleted_at.is_(None))
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.filter(
+            (Asset.title.ilike(term)) | (Asset.original_filename_safe.ilike(term))
+        )
+    if container:
+        query = query.filter(Asset.container == container.lower().strip())
+
+    query = query.order_by(desc(Asset.created_at))
     assets = db.execute(query).scalars().all()
     items = [map_asset_to_response(a) for a in assets]
     return AssetListResponse(items=items, total=len(items))

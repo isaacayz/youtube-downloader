@@ -203,6 +203,10 @@ def _run_file_conversion(db: Session, job: Job):
         sha256 = calculate_file_checksum(output_temp_path)
         size_bytes = os.path.getsize(output_temp_path)
 
+        existing_dup = db.execute(select(Asset).filter_by(sha256=sha256, deleted_at=None)).scalar_one_or_none()
+        if existing_dup:
+            log_event(db, job.id, "duplicate_detected", "validate", 98, f"Media content matches existing asset: {existing_dup.original_filename_safe}")
+
         # Atomic move to downloads area
         asset_id = uuid.uuid4()
         final_filename = f"{base_name}.{container}"
@@ -294,6 +298,9 @@ def _run_remote_acquisition(db: Session, job: Job):
             elif container == "webm":
                 cmd += ["--merge-output-format", "webm"]
 
+            if job.requested_subtitles:
+                cmd += ["--write-subs", "--write-auto-subs", "--sub-format", "vtt/srt"]
+
         cmd.append(url)
 
         process = subprocess.Popen(
@@ -356,6 +363,10 @@ def _run_remote_acquisition(db: Session, job: Job):
 
         sha256 = calculate_file_checksum(downloaded_path)
         size_bytes = os.path.getsize(downloaded_path)
+
+        existing_dup = db.execute(select(Asset).filter_by(sha256=sha256, deleted_at=None)).scalar_one_or_none()
+        if existing_dup:
+            log_event(db, job.id, "duplicate_detected", "validate", 98, f"Media content matches existing asset: {existing_dup.original_filename_safe}")
 
         # Atomic move to downloads area
         asset_id = uuid.uuid4()
